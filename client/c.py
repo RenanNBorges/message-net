@@ -39,14 +39,27 @@ class User:
         self.id = id
         print('carregando user como', self.id)
 
-    def add_message(self, sender, data: str) -> None:
+    def add_message(self, sender, data: str, lastview = False) -> None:
         if sender not in self.messsages.keys():
             self.messsages[sender] = []
-        self.messsages[sender].append(data)
 
-    def add_contat(self, id) -> None:
-        self.contatos.append(id)
-        print('Contato foi Adicionado na sua lista')
+        with open('client/messages.json', mode='r', encoding='utf-8') as msg_r:
+            msg = json.load(msg_r)
+            with open("client/messages.json", mode='w', encoding='utf-8') as user_w:
+                msg['users'][self.id] = {sender: (data, lastview)}
+                json.dump(msg, user_w)
+
+        self.messsages[sender].append((data, lastview))
+
+    def load_messages(self, people):
+        with open('client/messages.json', mode='r', encoding='utf-8') as msg_r:
+            msg = json.load(msg_r)
+            try:
+                for message in msg['users'][self.id][people]:
+                    print(message)
+            except KeyError:
+                print('Erro')
+                return
 
     def save_contact(self, contact_id, nickname):
         """
@@ -59,15 +72,14 @@ class User:
                 json.dump(user, user_w)
                 return f'{contact_id} foi adicionado como {nickname}'
 
-        print('Lista de contatos foi salva em user.json')
-
     def load_contacts_from_file(self):
         """
         Carrega a lista de contatos de um arquivo JSON.
         """
         try:
             with open('user.json', 'r') as file:
-                self.contatos = json.load(file)
+                user_data = json.load(file)
+
             print('Lista de contatos carregada do arquivo user.json')
         except FileNotFoundError:
             print('Nenhum arquivo de contatos encontrado. Criando uma nova lista.')
@@ -76,12 +88,12 @@ class User:
         """
         Exibe a lista de contatos armazenada localmente.
         """
-        if self.contatos:  # Verifica se há contatos na lista
-            print("Lista de Contatos:")
-            for id, contact in enumerate(self.contatos, start=1):
-                print(f'{id}. ID do Contato: {contact}')
-        else:
-            print("Nenhum contato encontrado.")
+        with open('client/user.json', mode='r', encoding='utf-8') as user_r:
+            user = json.load(user_r)
+            with open("client/user.json", mode='w', encoding='utf-8') as user_w:
+                for contact in user['users'][self.id]['contatos'].keys():
+                    nick =user['users'][self.id]['contatos'][contact]
+                    print(f'{nick} ID: {contact}')
 
 
 @dataclass
@@ -94,10 +106,11 @@ class Client:
 
     try:
         socket.connect((HOST, PORT))
-        print("Conexão Bem-Sucedida!")
+        print("Conexão Bem-Sucedida Ao Servidor!")
 
-    except Exception as err:
-        print(f'Erro ao conectar: {err}')
+    except:
+        print('Erro ao conectar no Servidor')
+        active = False
 
     def __del__(self):
         self.active = False
@@ -107,13 +120,6 @@ class Client:
     def set_host(self, host) -> str:
         self.HOST = host
         return self.HOST
-
-    def load_messages(self, people):
-        try:
-            for message in self.user.messsages[people]:
-                print(message)
-        except KeyError:
-            return
 
     def request_register(self):
         try:
@@ -126,8 +132,13 @@ class Client:
         self.user.load_user(id_user)
 
     def conn_user(self):
-        print(f'tentando conectar o user {self.user.id}')
         if self.user.id:
+            print(f'Tentando conectar o user {self.user.id}', end='')
+            for i in range(5):
+                print('.', end='')
+                sleep(1)
+            print('')
+
             try:
                 self.socket.send(f'03{self.user.id}'.encode())
                 print('Conectado como', self.user.id)
@@ -135,11 +146,7 @@ class Client:
             except Exception:
                 print('Erro ao Conectar')
                 return False
-        else:
-            print(self.user.id)
 
-    def confirm_recv(self, ):
-        pass
 
     def recv_msg(self, src_id: str, timestamp: float, data: str):
         """
@@ -152,12 +159,12 @@ class Client:
         *data* -> Até 218 caractéres de conteúdo que foram enviados
         """
 
-        print(f'New Message Received from {src_id}')
+        print(f'\nNew Message Received from {src_id}')
         ts = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
         self.user.add_message(src_id, f'<{ts} | {src_id}> {data}')
 
     def send_msg(self, dst_id, data) -> bool:
-        if len(data) > 218:
+        if len(data) > 218 or len(dst_id) > 13:
             return False
 
         timestamp = get_ts()
@@ -182,7 +189,6 @@ class Client:
         timestamp = get_ts()
         try:
             self.socket.send(f'08{src_id}{timestamp}'.encode())
-            print()
         except Exception:
             return False
 
@@ -196,7 +202,7 @@ class Client:
         ts = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
         print(f'Mensagens enviadas para {dst_id} foram lidas às {ts}')
 
-    def create_new(self, members: list):
+    def create_new_gp(self, members: list):
         timestamp = get_ts()
         members_join = ''.join(members[i] for i in range(len(members)))
         msg = f'10{self.user.id}{timestamp}{members_join}'
@@ -209,27 +215,33 @@ class Client:
         except Exception:
             print('Erro ao Conectar')
 
+    def added_gp(self, gp_id, membros, timestamp):
+        ts = datetime.fromtimestamp(int(timestamp)).strftime('%Y-%m-%d %H:%M:%S')
+        print(f'Você foi adicionado no grupo {gp_id} às {ts}')
+        print("São membros do grupo também: ")
+        for member in membros:
+            print(f'{member}')
+
     def handle_recv(self):
-        print('a')
         while self.active:
             try:
                 data = self.socket.recv(1024)
                 if not data:
                     break
                 data = data.decode()
-                print(data)
                 match data[:2]:
                     case '02':
                         self.register(data[2:])
                     case '06':
-                        print(data)
                         self.recv_msg(src_id=data[2:15], timestamp=int(data[28:38]), data=data[38:])
                     case '07':
-                        print('confirm send')
-                        print(data)
+                        timestamp = data[15:25]
+                        ts = datetime.fromtimestamp(int(timestamp)).strftime('%Y-%m-%d %H:%M:%S')
+                        print(f'Envio Confirmado para {data[2:15]} às {ts}')
                     case '09':
-                        print('ALERT')
                         self.recv_seen(dst_id=data[2:15], timestamp=int(data[15:]))
+                    case '11':
+                        self.added_gp(gp_id=data[2:15], timestamp=data[15:25], membros=data[25:])
             except ConnectionAbortedError:
                 break
 

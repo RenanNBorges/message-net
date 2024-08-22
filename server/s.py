@@ -15,6 +15,7 @@ class Server:
     users: dict = field(default_factory=dict)
     online: dict = field(default_factory=dict)
     pending: dict = field(default_factory=dict)
+    groups: dict = field(default_factory=dict)
     server: socket = socket(AF_INET, SOCK_STREAM)
 
     def __del__(self):
@@ -24,7 +25,7 @@ class Server:
         print('Server closed')
 
     @staticmethod
-    def gen_id(self, type_id: str):
+    def gen_id(type_id: str):
         match type_id:
             case 'U':
                 id = '0'
@@ -59,7 +60,6 @@ class Server:
             try:
                 data = client.recv(1024)
                 recv = self.handle_request(client, data.decode())
-                print(recv)
 
             except ConnectionResetError:
                 try:
@@ -74,7 +74,7 @@ class Server:
 
     def register_user(self, client):
         while True:
-            user_id = '0' + ''.join(str(randint(0, 9)) for _ in range(1, ID_LEN))
+            user_id = self.gen_id('U')
             if user_id not in self.users:
                 break
 
@@ -91,16 +91,16 @@ class Server:
             self.users[user_id] = client
             self.online[client] = user_id
 
-            print(self.users[user_id])
-            print(client)
             for data in self.pending[user_id]:
-                print(data)
-                self.handle_request(client, data)
+                if data.startswith('11'):
+                    client.send(data.encode('utf-8'))
+                else:
+                    self.handle_request(client, data)
                 self.pending[user_id].remove(data)
 
         except Exception:
             return '[NOT FOUND]'
-        
+
         return f'[{user_id}]'
 
     def forward_msg(self, src_id: str, dst_id: str, timestamp: str, data: str):
@@ -118,7 +118,6 @@ class Server:
                 return f'[{dst_id}][OFFLINE]'
         except KeyError:
             return f'[{dst_id}][NOTFOUND]'
-
 
     def confirm_rcv(self, src_id: str, dst_id: str):
         client_socket = self.users[src_id]
@@ -146,36 +145,45 @@ class Server:
         print(f'[SEEN][{src_id}][{timestamp}]')
         return '[09]' + self.warn_seen_to(client_socket=client, src_id=src_id, timestamp=timestamp)
 
-    def get_pending(self, msg : str, user_id: str):
+    def get_pending(self, msg: str, user_id: str):
         self.pending[user_id].append(msg)
         print(f'{user_id} ficou com mensagens pendentes\nMensagem: {msg}\nPendencias {self.pending[user_id]}')
 
-    def new_group(self):
+    def new_group(self, criador: str, timestamp: str, members: str):
         """
 
         :return:
         """
+        while True:
+            grup_id = self.gen_id('G')
+            if grup_id not in self.groups.keys():
+                print('id criado')
+                break
+
+            members_list = [members[i:i + ID_LEN] for i in range(0, len(members), ID_LEN)].append(criador)
+            for i in members_list:
+                msg = f'11{grup_id}{timestamp}{members}'
+                try:
+                    socket_member = self.users[i]
+                    socket_member.send(msg.encode('utf-8'))
+                except KeyError:
+                    self.get_pending(msg, i)
 
     def handle_request(self, client_socket: socket, data: str):
-        print('a')
         match (data[:2]):
             case '01':
                 print('[REG*]' + self.register_user(client_socket))
             case '03':
                 print('[*ON*]' + self.user_online(client=client_socket, user_id=data[2:]))
             case '05':
-                print('enviar', data)
                 return '[SEND]' + self.forward_msg(src_id=data[2:15], dst_id=data[15:28], timestamp=data[28:38],
                                                    data=data[38:])
             case '08':
                 return self.seen_from(client=client_socket, src_id=data[2:15], timestamp=data[15:])
-            case other:
-                print('outros', data )
-                return
+            case '10':
+                print('[GROUP][REQUEST]')
+                return self.new_group(criador=data[2:15], timestamp=data[15:25], members=data[25:])
 
 
 s = Server()
 s.run()
-
-
-
