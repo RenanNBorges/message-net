@@ -1,0 +1,46 @@
+#!/bin/bash
+
+ENV_NAME="redespy"
+PYTHON_VERSION="3.10"
+SCRIPT_DIR="X" # Substitui por o do diretório dos códigos 
+SCRIPT_NAME="s.py"
+
+function check_conda_installed {
+    if command -v conda &> /dev/null; then
+        echo "Conda está instalado."
+        return 0
+    else
+        echo "Conda não está instalado."
+        return 1
+    fi
+}
+
+function create_and_activate_env {
+    echo "Criando o ambiente Conda com Python $PYTHON_VERSION..."
+    conda create -y -n "$ENV_NAME" python="$PYTHON_VERSION"
+    echo "Ativando o ambiente..."
+    source "$(conda info --base)/etc/profile.d/conda.sh"
+    conda activate "$ENV_NAME"
+}
+
+# Função para instalar o Miniconda
+function install_miniconda {
+    echo "Instalando Miniconda..."
+    wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+    bash miniconda.sh -b -p $HOME/miniconda
+    rm miniconda.sh
+    export PATH="$HOME/miniconda/bin:$PATH"
+    source "$HOME/miniconda/etc/profile.d/conda.sh"
+}
+
+# Verificar se conda está instalado
+if check_conda_installed; then
+    create_and_activate_env
+else
+    install_miniconda
+    create_and_activate_env
+fi
+
+# Navegar para o diretório X e executar o script s.py
+cd "$SCRIPT_DIR"
+python "$SCRIPT_NAME"
