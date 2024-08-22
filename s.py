@@ -147,9 +147,17 @@ class Server:
                 return '[SEND]' + self.forward_msg(src_id=data[2:15], dst_id=data[15:28], timestamp=data[28:38], data=data[38:])
             case '08':
                 return self.seen_from(client=client_socket, src_id=data[2:15], timestamp=data[15:])
+            case '10':
+                creator_id = self.online[client_socket]
+                members = [data[i:i+13] for i in range(28, len(data), 13)]
+                group_id = self.new_group(creator_id, members)
+                return f'[GROUP CREATED]{group_id}'
             case other:
                 print('oi', data[:2],)
                 return
+    
+
+
 
 s = Server()
 s.run()

@@ -1,5 +1,5 @@
-import threading
 from dataclasses import dataclass, field
+import json
 from time import sleep
 from typing import Optional
 from socket import *
@@ -13,7 +13,10 @@ def get_ts() -> str:
 class User:
     id: Optional[str] = None
     username: Optional[str] = None
+    contatos: list[str] = field(default_factory=list)
     messsages: dict = field(default_factory=dict)
+    
+    
 
     def load_id(self, id: str) -> None:
         if not self.id:
@@ -24,6 +27,40 @@ class User:
         if sender not in self.messsages.keys():
             self.messsages[sender] = []
         self.messsages[sender].append(data)
+    
+    def add_contat(self, id) -> None:
+        self.contatos.append(id)
+        print('Contato foi Adicionado na sua lista')
+    
+    def save_contacts_to_file(self):
+        """
+        Salva a lista de contatos em um arquivo JSON.
+        """
+        with open('contatos.json', 'w+') as file:
+            json.dump(id)
+        print('Lista de contatos foi salva em contatos.json')
+
+    def load_contacts_from_file(self):
+        """
+        Carrega a lista de contatos de um arquivo JSON.
+        """
+        try:
+            with open('contatos.json', 'r') as file:
+                self.contatos = json.load(file)
+            print('Lista de contatos carregada do arquivo contatos.json')
+        except FileNotFoundError:
+            print('Nenhum arquivo de contatos encontrado. Criando uma nova lista.')
+    
+    def request_contacts(self):
+        """
+        Exibe a lista de contatos armazenada localmente.
+        """
+        if self.contatos:  # Verifica se há contatos na lista
+            print("Lista de Contatos:")
+            for id, contact in enumerate(self.contatos, start=1):
+                print(f'{id}. ID do Contato: {contact}')
+        else:
+            print("Nenhum contato encontrado.")
 
 
 @dataclass
@@ -31,7 +68,7 @@ class Client:
     user: User = User()
     PORT: int = 19033
     HOST: str = '127.0.0.1'
-    socket: socket = socket(AF_INET, SOCK_STREAM)
+    socket: socket = socket(AF_INET, SOCK_STREAM) # type: ignore
 
     def __del__(self):
         self.socket.close()
@@ -56,6 +93,17 @@ class Client:
 
         except Exception as err:
             print(f'Erro ao conectar: {err}')
+
+
+
+    
+    def load_contacts(self, contacts: str):
+        """
+        Carrega a lista de contatos recebida do servidor.
+        """
+        self.contacts = contacts.split(',')
+        print(f"Contatos carregados: {self.contacts}")
+
 
     def request_register(self):
         try:
@@ -140,20 +188,20 @@ class Client:
         ts = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
         print(f'Mensagens enviadas para {dst_id} foram lidas às {ts}')
 
-    def create_new(self, members : list):
+
+    def create_group(self, members : list):
         timestamp = get_ts()
         members_join = ''.join(members[i] for i in range(len(members)))
         msg = f'10{self.user.id}{timestamp}{members_join}'
         try:
             self.socket.send(msg.encode())
-            print('VOcê criou com sucesso o grupo com os membros:')
+            print('Você criou com sucesso o grupo com os membros:')
             for member in members:
                 print(f'{member}')
 
         except Exception:
             print('Erro ao Conectar')
         
-
 
 
 
@@ -176,6 +224,8 @@ class Client:
                 case '09':
                     print('ALERT')
                     self.recv_seen(dst_id=data[2:15], timestamp=int(data[15:]))
+                case '12':  
+                    self.load_contacts(data[2:])
 
 
     '''

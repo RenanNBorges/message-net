@@ -23,7 +23,7 @@ def menu():
 
     while True:
         print("### Menu ###")
-        choice = input("[1] Mandar mensagem\n[2] Abrir Conversa\nInput: ")
+        choice = input("[1] Mandar mensagem\n[2] Abrir Conversa\n[3] Adicionar na Lista de Contatos\n[4] Mostrar Lista de Contatos\nInput: ")
         match choice:
             case "1":
                 dst = input("Digite o ID do destino: ")
@@ -33,6 +33,12 @@ def menu():
                 contact_id = input('De quem? ')
                 c.send_seen(contact_id)
                 c.load_messages(contact_id)
+            case "3":
+                contact = input('Digite o ID do contato:')
+                c.user.add_contat(contact)
+                c.user.save_contacts_to_file()
+            case "4":
+                c.user.request_contacts()
 
 
 
