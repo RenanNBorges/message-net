@@ -2,7 +2,7 @@
 
 ENV_NAME="redespy"
 PYTHON_VERSION="3.10"
-SCRIPT_DIR="X" # Substitui por o do diretório dos códigos 
+SCRIPT_DIR="$HOME/server" # Substitui por o do diretório dos códigos 
 SCRIPT_NAME="s.py"
 
 function check_conda_installed {
