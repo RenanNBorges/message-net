@@ -5,9 +5,8 @@ from socket import *
 from typing import Optional, List
 import threading
 
-from setuptools.command.build_ext import if_dl
-
 ID_LEN = 13
+
 
 @dataclass(slots=True)
 class Server:
@@ -15,6 +14,7 @@ class Server:
     PORT: int = 19033
     users: dict = field(default_factory=dict)
     online: dict = field(default_factory=dict)
+    pending: dict = field(default_factory=dict)
     server: socket = socket(AF_INET, SOCK_STREAM)
 
     def __del__(self):
@@ -24,7 +24,7 @@ class Server:
         print('Server closed')
 
     @staticmethod
-    def gen_id(self, type_id : str):
+    def gen_id(self, type_id: str):
         match type_id:
             case 'U':
                 id = '0'
@@ -58,14 +58,18 @@ class Server:
         while True:
             try:
                 data = client.recv(1024)
-                if not data:
-                    print(f'Client {client.getpeername()} disconnected')
-                    del self.online[client]
-                    client.close()
-                    break
                 recv = self.handle_request(client, data.decode())
                 print(recv)
-            except:
+
+            except ConnectionResetError:
+                try:
+                    print(f'Client {client.getpeername()} with ID {self.online[client]} disconnected')
+                    self.users[self.online[client]] = ''
+                    del self.online[client]
+                except KeyError:
+                    print(f'Client {client.getpeername()} disconnected')
+
+                client.close()
                 break
 
     def register_user(self, client):
@@ -75,8 +79,9 @@ class Server:
                 break
 
         try:
-            client.send(f'02{user_id}'.encode())
+            client.send(f'02{user_id}'.encode('utf-8'))
             self.users[user_id] = client
+            self.pending[user_id] = []
             return f'[{user_id}]'
         except Exception as e:
             return '[FAILED]'
@@ -85,55 +90,71 @@ class Server:
         try:
             self.users[user_id] = client
             self.online[client] = user_id
-            return f'[{user_id}]'
+
+            print(self.users[user_id])
+            print(client)
+            for data in self.pending[user_id]:
+                print(data)
+                self.handle_request(client, data)
+                self.pending[user_id].remove(data)
+
         except Exception:
             return '[NOT FOUND]'
+        
+        return f'[{user_id}]'
 
     def forward_msg(self, src_id: str, dst_id: str, timestamp: str, data: str):
-        dst_socket = self.users[dst_id]
-        print('entrei no encaminhameno')
-        print(f'[{src_id}][{dst_id}][{timestamp}]{data}]')
-        if dst_id in self.online.values():
-            msg = f'06{src_id}{dst_id}{timestamp}{data}'
+        msg = f'06{src_id}{dst_id}{timestamp}{data}'
+        try:
+            dst_socket = self.users[dst_id]
             try:
-                dst_socket.send(msg.encode())
+                dst_socket.send(msg.encode('utf-8'))
                 ts = datetime.fromtimestamp(int(timestamp)).strftime('%Y-%m-%d %H:%M:%S')
                 self.confirm_rcv(src_id=src_id, dst_id=dst_id)
                 return f'[{src_id}][{dst_id}][{ts}][{data}]'
             except:
-                return ['FAILED']
+                msg = f'05{src_id}{dst_id}{timestamp}{data}'
+                self.get_pending(msg, dst_id)
+                return f'[{dst_id}][OFFLINE]'
+        except KeyError:
+            return f'[{dst_id}][NOTFOUND]'
 
 
-    def confirm_rcv(self, src_id : str, dst_id : str):
+    def confirm_rcv(self, src_id: str, dst_id: str):
         client_socket = self.users[src_id]
         timestamp = int(datetime.now(tz=timezone.utc).timestamp())
         msg = f'07{dst_id}{str(timestamp)}'
         try:
-            client_socket.send(msg.encode())
+            client_socket.send(msg.encode('utf-8'))
         except Exception as e:
             print(f'Erro ao confirmar recebimento: {e}')
 
-    def warn_seen_to(self, client_socket : socket, src_id : str, timestamp : str):
+    def warn_seen_to(self, client_socket: socket, src_id: str, timestamp: str):
         dst_id = self.online[client_socket]
         src_socket = self.users[src_id]
+        msg = f'09{dst_id}{timestamp}'
         try:
-            src_socket.send(f'09{dst_id}{timestamp}'.encode())
+            src_socket.send(msg.encode('utf-8'))
             ts = datetime.fromtimestamp(int(timestamp)).strftime('%Y-%m-%d %H:%M:%S')
             return f'[{dst_id}][{ts}]'
         except Exception as e:
+            msg = f'08{dst_id}{timestamp}'
+            self.get_pending(msg, src_id)
             return '[FAILED]'
 
-
-    def seen_from(self, client : socket, src_id : str, timestamp : str):
+    def seen_from(self, client: socket, src_id: str, timestamp: str):
         print(f'[SEEN][{src_id}][{timestamp}]')
         return '[09]' + self.warn_seen_to(client_socket=client, src_id=src_id, timestamp=timestamp)
+
+    def get_pending(self, msg : str, user_id: str):
+        self.pending[user_id].append(msg)
+        print(f'{user_id} ficou com mensagens pendentes\nMensagem: {msg}\nPendencias {self.pending[user_id]}')
 
     def new_group(self):
         """
 
         :return:
         """
-
 
     def handle_request(self, client_socket: socket, data: str):
         print('a')
@@ -143,21 +164,18 @@ class Server:
             case '03':
                 print('[*ON*]' + self.user_online(client=client_socket, user_id=data[2:]))
             case '05':
-                print('oi', data)
-                return '[SEND]' + self.forward_msg(src_id=data[2:15], dst_id=data[15:28], timestamp=data[28:38], data=data[38:])
+                print('enviar', data)
+                return '[SEND]' + self.forward_msg(src_id=data[2:15], dst_id=data[15:28], timestamp=data[28:38],
+                                                   data=data[38:])
             case '08':
                 return self.seen_from(client=client_socket, src_id=data[2:15], timestamp=data[15:])
-            case '10':
-                creator_id = self.online[client_socket]
-                members = [data[i:i+13] for i in range(28, len(data), 13)]
-                group_id = self.new_group(creator_id, members)
-                return f'[GROUP CREATED]{group_id}'
             case other:
-                print('oi', data[:2],)
+                print('outros', data )
                 return
-    
-
 
 
 s = Server()
 s.run()
+
+
+

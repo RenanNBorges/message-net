@@ -1,5 +1,9 @@
-from c import *
+import os
+
+from client.c import *
 import threading
+
+import sys
 
 
 def interface():
@@ -7,8 +11,7 @@ def interface():
     t1 = threading.Thread(target=inicio)
     t.start()
     t1.start()
-    t.join()
-    t1.join()
+
 
 def menu():
     timeout = 0
@@ -20,10 +23,10 @@ def menu():
             return inicio()
             break
 
-
     while True:
         print("### Menu ###")
-        choice = input("[1] Mandar mensagem\n[2] Abrir Conversa\n[3] Adicionar na Lista de Contatos\n[4] Mostrar Lista de Contatos\nInput: ")
+        choice = input(
+            "[1] Mandar mensagem\n[2] Abrir Conversa\n[3] Adicionar na Lista de Contatos\n[4] Mostrar Lista de Contatos\nInput: ")
         match choice:
             case "1":
                 dst = input("Digite o ID do destino: ")
@@ -35,41 +38,55 @@ def menu():
                 c.load_messages(contact_id)
             case "3":
                 contact = input('Digite o ID do contato:')
-                c.user.add_contat(contact)
-                c.user.save_contacts_to_file()
+                nick = input('Digite um nickname para o contato')
+                print(c.user.save_contact(contact, nick))
             case "4":
                 c.user.request_contacts()
 
 
-
-
-
-
-
 def login():
-    c.user.load_id(input("Insira o ID: "))
-    if not c.conn_user():
-        login()
-    return
-
+    id = input("Insira o ID: ")
+    if c.user.user_exists(id):
+        c.user.load_user(id)
+        print('eita')
+        return menu()
+    return inicio()
 
 
 def inicio():
+    try:
+        choice = int(input("### CHAT ###\n[0] Registrar\n[1] Login\n[2] Exit\nInput:"))
+        match choice:
+            case 0:
+                c.request_register()
+                return menu()
+            case 1:
+                login()
+            case 2:
+                print('b')
+                c.__del__()
+                return exit(0)
+    except Exception as e:
+        print(e)
+        c.__del__()
 
-    choice = int(input("### CHAT ###\n[0] Registrar\n[1] Login\n[2] Exit\nInput:"))
-    match choice:
-        case 0:
-            c.request_register()
-            menu()
-        case 1:
-            login()
-            menu()
-        case 2:
-            return
 
+global t_active
+t_active = True
 c = Client()
-c.conn_serv()
-interface()
 
 
+def main():
+    interface()
 
+
+if __name__ == '__main__':
+    try:
+        main()
+    except KeyboardInterrupt:
+        print('Interrupted')
+        try:
+            t.stop()
+            sys.exit(130)
+        except SystemExit:
+            os._exit(130)
